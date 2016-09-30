@@ -4,6 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Linq;
+using System.Net;
+using System.Net.Mail;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -17,7 +19,7 @@ namespace TaskHandler
         {
 
             string taskName = args[0];
-            //string taskName = "152250181138-20160928150214";
+            //string taskName = "152260222371~152260222348-20160929212823";
             List<string> UrlNumbers = taskName.Split('-')[0].Split('~').ToList();
 
             SetConnectionString();
@@ -34,11 +36,10 @@ namespace TaskHandler
             int optionsNumber;
 
             string eBayUrlNumbers = string.Empty;
+            string FailedeBayUrlNumbers = string.Empty;
 
             foreach (string urlNumber in UrlNumbers)
             {
-                eBayUrlNumbers += "'" + urlNumber + "',";
-
                 sqlString = @"  SELECT  eBayListingPrice, CostcoOptions 
                                 FROM    eBay_CurrentListings
                                 WHERE   eBayItemNumber = '" + urlNumber + "'" +
@@ -57,9 +58,12 @@ namespace TaskHandler
 
                 int nOptions_db = 0;
 
-                foreach (string l1 in options.Split('|'))
+                if (options != "")
                 {
-                    nOptions_db += l1.Split(';').Length;
+                    foreach (string l1 in options.Split('|'))
+                    {
+                        nOptions_db += l1.Split(';').Length;
+                    }
                 }
 
                 driver.Navigate().GoToUrl("http://www.ebay.com/itm/" + urlNumber);
@@ -95,29 +99,72 @@ namespace TaskHandler
 
                 string ePriceText = ePrice.Text.Replace("US", "").Trim();
 
-
-                IWebElement eQty = driver.FindElementById("qtySubTxt");
-
                 if (ePriceText == priceString && nOptions == nOptions_db)
                 {
                     sqlString = @"UPDATE Tasks SET Completed = 1 WHERE TaskName = '" + taskName + "'";
                     cmd.CommandText = sqlString;
                     cmd.ExecuteNonQuery();
 
-                    
+                    eBayUrlNumbers += "'" + urlNumber + "',";
+                }
+                else
+                {
+                    FailedeBayUrlNumbers += "'" + urlNumber + "',";
+
                 }
             }
 
-            eBayUrlNumbers = eBayUrlNumbers.Substring(0, eBayUrlNumbers.Length - 1);
+            if (eBayUrlNumbers != "")
+            {
+                eBayUrlNumbers = eBayUrlNumbers.Substring(0, eBayUrlNumbers.Length - 1);
 
-            sqlString = @" UPDATE eBay_CurrentListings SET PendingChange = '' WHERE eBayItemNumber in (" + eBayUrlNumbers + ") AND DeleteDT is null";
-            cmd.CommandText = sqlString;
-            cmd.ExecuteNonQuery();
+                sqlString = @" UPDATE eBay_CurrentListings SET PendingChange = '' WHERE eBayItemNumber in (" + eBayUrlNumbers + ") AND DeleteDT is null";
+                cmd.CommandText = sqlString;
+                cmd.ExecuteNonQuery();
 
-            cn.Close();
-            
+                cn.Close();
+
+                using (MailMessage mail = new MailMessage())
+                {
+                    mail.From = new MailAddress("zjding@gmail.com");
+                    mail.To.Add("zjding@outlook.com");
+                    mail.Subject = eBayUrlNumbers.Replace("'", "") + " updated successfully";
+                    mail.Body = "";
+                    mail.IsBodyHtml = true;
+
+                    using (SmtpClient smtp = new SmtpClient("smtp.gmail.com", 587))
+                    {
+                        smtp.Credentials = new NetworkCredential("zjding@gmail.com", "G4indigo");
+                        smtp.EnableSsl = true;
+                        smtp.Send(mail);
+                    }
+                }
+            }
+
+            if (FailedeBayUrlNumbers != "")
+            {
+
+                using (MailMessage mail = new MailMessage())
+                {
+                    mail.From = new MailAddress("zjding@gmail.com");
+                    mail.To.Add("zjding@outlook.com");
+                    mail.Subject = FailedeBayUrlNumbers.Replace("'", "") + " failed to updat";
+                    mail.Body = "";
+                    mail.IsBodyHtml = true;
+
+                    using (SmtpClient smtp = new SmtpClient("smtp.gmail.com", 587))
+                    {
+                        smtp.Credentials = new NetworkCredential("zjding@gmail.com", "G4indigo");
+                        smtp.EnableSsl = true;
+                        smtp.Send(mail);
+                    }
+                }
+            }
+
             driver.Dispose();
+
         }
+
 
         private static void SetConnectionString()
         {
